@@ -46,18 +46,25 @@ macOS / Linux:
 bash install.sh
 ```
 
-The installer copies `tools/bg.js` into your opencode config's `tools/` directory, backs up any existing file, and runs a syntax check. It is idempotent and non-interactive.
+The installer does two things:
+
+1. Copies `tools/bg.js` into your opencode config's `tools/` directory (backs up any existing file, runs a syntax check).
+2. Appends the "long-running commands" convention to `instructions.md`, so the agent knows when to use `bg_start` instead of `bash`. Skips if the section already exists.
+
+It is idempotent and non-interactive. Extra flags:
+
+- `-Force` / `--force`: overwrite an existing `bg.js` without a backup.
+- `-SkipInstructions` / `--skip-instructions`: do not touch `instructions.md`.
 
 Then **restart opencode** — the tool registry is cached per instance and only rescanned on start.
 
 ### Manual
 
-Copy `tools/bg.js` to:
-
-- Windows: `%USERPROFILE%\.config\opencode\tools\bg.js`
-- macOS / Linux: `~/.config/opencode/tools/bg.js`
-
-Restart opencode.
+1. Copy `tools/bg.js` to:
+   - Windows: `%USERPROFILE%\.config\opencode\tools\bg.js`
+   - macOS / Linux: `~/.config/opencode/tools/bg.js`
+2. Append the contents of `instructions-snippet.md` to `instructions.md` in the same config directory.
+3. Restart opencode.
 
 ### For an AI agent
 
@@ -72,9 +79,12 @@ Steps:
 2. Run the installer for this OS:
    - Windows: powershell -ExecutionPolicy Bypass -File .\install.ps1
    - macOS/Linux: bash install.sh
+   The installer copies tools/bg.js into the opencode config tools dir AND appends
+   the long-running-commands convention to instructions.md.
 3. Confirm tools/bg.js exists under the opencode config dir
    (%USERPROFILE%\.config\opencode\tools on Windows, ~/.config/opencode/tools elsewhere).
-4. Tell the user to restart opencode for the tool to load.
+4. Confirm instructions.md contains the section "长时命令后台执行约定".
+5. Tell the user to restart opencode for the tool to load.
 Do not overwrite an existing bg.js without backing it up (the installer already does this).
 ```
 
