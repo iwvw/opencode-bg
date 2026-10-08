@@ -6,8 +6,9 @@
 .DESCRIPTION
     Copies tools/bg.js into the global opencode tools directory so that opencode
     loads `bg_start` / `bg_logs` / `bg_list` / `bg_restart` / `bg_stop` on next
-    start, and appends the "long-running commands" convention to instructions.md
-    (so the agent knows to use it).
+    start, and installs the "long-running commands" convention into
+    instructions.md (so the agent knows to use it). The convention is written as
+    a managed BEGIN/END block, so re-running updates it in place.
 
     Idempotent and non-interactive: safe to run from an AI agent or CI.
 
@@ -104,27 +105,55 @@ if ($needRestart) {
     }
 }
 
-# ---- 2. Append the convention to instructions.md ----
+# ---- 2. Install (or update) the convention in instructions.md ----
+# The snippet is wrapped in BEGIN/END markers. On re-run we replace just that
+# block, so snippet updates stay in sync. A legacy unmarked section is migrated
+# once; otherwise we append a fresh block.
+$changed = $needRestart
 if (-not $SkipInstructions) {
     $snippetPath = Join-Path $PSScriptRoot 'instructions-snippet.md'
     if (Test-Path -LiteralPath $snippetPath) {
         $instructionsPath = Join-Path $ConfigDir 'instructions.md'
-        $marker = '长时命令后台执行约定'
-        $snippet = (Get-Content -LiteralPath $snippetPath -Raw).TrimEnd()
+        $beginMarker = '<!-- BEGIN opencode-bg convention -->'
+        $endMarker = '<!-- END opencode-bg convention -->'
+        $legacyMarker = '长时命令后台执行约定'
+        $snippet = (Get-Content -LiteralPath $snippetPath -Raw -Encoding UTF8).TrimEnd()
 
-        $already = (Test-Path -LiteralPath $instructionsPath) -and
-            (Select-String -LiteralPath $instructionsPath -SimpleMatch $marker -Quiet)
+        $existing = $null
+        if (Test-Path -LiteralPath $instructionsPath) {
+            $existing = Get-Content -LiteralPath $instructionsPath -Raw -Encoding UTF8
+        }
 
-        if ($already) {
-            Write-Info "instructions.md already contains the convention. Skipping."
+        if ($existing -and $existing.Contains($beginMarker) -and $existing.Contains($endMarker)) {
+            $startIdx = $existing.IndexOf($beginMarker)
+            $endIdx = $existing.IndexOf($endMarker) + $endMarker.Length
+            $updated = $existing.Substring(0, $startIdx) + $snippet + $existing.Substring($endIdx)
+            if ($updated -ne $existing) {
+                Set-Content -LiteralPath $instructionsPath -Value $updated -Encoding utf8
+                $changed = $true
+                Write-Info "Updated the managed convention block in instructions.md."
+            }
+            else {
+                Write-Info "instructions.md convention block is already up to date."
+            }
+        }
+        elseif ($existing -and $existing.Contains($legacyMarker)) {
+            $m = [regex]::Match($existing, '(?ms)^#\s*' + [regex]::Escape($legacyMarker) + '.*?(?=^#\s|\z)')
+            if ($m.Success) {
+                $updated = $existing.Substring(0, $m.Index) + $snippet + "`n`n" + $existing.Substring($m.Index + $m.Length)
+                Set-Content -LiteralPath $instructionsPath -Value $updated.TrimEnd() -Encoding utf8
+                $changed = $true
+                Write-Info "Migrated the legacy convention in instructions.md to a managed block."
+            }
         }
         else {
             if (-not (Test-Path -LiteralPath $instructionsPath)) {
                 New-Item -ItemType File -Path $instructionsPath -Force | Out-Null
                 Write-Info "Created instructions.md."
             }
-            $prefix = "`n`n"
+            $prefix = if ($existing -and $existing.Trim().Length -gt 0) { "`n`n" } else { "" }
             Add-Content -LiteralPath $instructionsPath -Value ($prefix + $snippet) -Encoding utf8
+            $changed = $true
             Write-Info "Appended the long-running-commands convention to instructions.md."
         }
     }
@@ -134,8 +163,8 @@ if (-not $SkipInstructions) {
 }
 
 Write-Info ""
-if ($needRestart) {
-    Write-Info "Done. Restart opencode for the tool to take effect."
+if ($changed) {
+    Write-Info "Done. Restart opencode for changes to take effect."
 }
 else {
     Write-Info "Nothing changed. If opencode is running, restart it to (re)load the tool."

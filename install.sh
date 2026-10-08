@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install the opencode `bg` background-command tool into a user's opencode config,
-# and append the "long-running commands" convention to instructions.md.
+# and install the "long-running commands" convention into instructions.md as a
+# managed block (re-runs update it in place).
 # Idempotent and non-interactive: safe to run from an AI agent or CI.
 set -euo pipefail
 
@@ -66,19 +67,57 @@ else
   fi
 fi
 
-# ---- 2. Append the convention to instructions.md ----
+# ---- 2. Install (or update) the convention in instructions.md ----
+# The snippet is wrapped in BEGIN/END markers. On re-run we replace just that
+# block, so snippet updates stay in sync. A legacy unmarked section is migrated
+# once; otherwise we append a fresh block.
 if [ "$SKIP_INSTRUCTIONS" -ne 1 ]; then
   SNIPPET="$SCRIPT_DIR/instructions-snippet.md"
   INSTRUCTIONS="$CONFIG_DIR/instructions.md"
-  MARKER="长时命令后台执行约定"
+  BEGIN="<!-- BEGIN opencode-bg convention -->"
+  END="<!-- END opencode-bg convention -->"
+  LEGACY="长时命令后台执行约定"
 
   if [ ! -f "$SNIPPET" ]; then
     warn "instructions-snippet.md not found; skipped instructions.md update."
-  elif [ -f "$INSTRUCTIONS" ] && grep -qF "$MARKER" "$INSTRUCTIONS"; then
-    info "instructions.md already contains the convention. Skipping."
+  elif [ -f "$INSTRUCTIONS" ] && grep -qF "$BEGIN" "$INSTRUCTIONS" && grep -qF "$END" "$INSTRUCTIONS"; then
+    TMP="$INSTRUCTIONS.tmp.$$"
+    awk -v begin="$BEGIN" -v end="$END" -v snip="$SNIPPET" '
+      $0 == begin { while ((getline line < snip) > 0) print line; close(snip); skip = 1; next }
+      skip && $0 == end { skip = 0; next }
+      skip { next }
+      { print }
+    ' "$INSTRUCTIONS" > "$TMP"
+    if cmp -s "$TMP" "$INSTRUCTIONS"; then
+      rm -f "$TMP"
+      info "instructions.md convention block is already up to date."
+    else
+      mv "$TMP" "$INSTRUCTIONS"
+      CHANGED=1
+      info "Updated the managed convention block in instructions.md."
+    fi
+  elif [ -f "$INSTRUCTIONS" ] && grep -qF "$LEGACY" "$INSTRUCTIONS"; then
+    TMP="$INSTRUCTIONS.tmp.$$"
+    awk -v legacy="$LEGACY" -v snip="$SNIPPET" '
+      index($0, legacy) && $0 ~ /^#/ {
+        while ((getline line < snip) > 0) print line
+        close(snip); print ""; inblock = 1; next
+      }
+      inblock && /^#/ { inblock = 0 }
+      inblock { next }
+      { print }
+    ' "$INSTRUCTIONS" > "$TMP"
+    mv "$TMP" "$INSTRUCTIONS"
+    CHANGED=1
+    info "Migrated the legacy convention in instructions.md to a managed block."
   else
-    printf '\n\n' >> "$INSTRUCTIONS"
+    if [ ! -f "$INSTRUCTIONS" ] || [ ! -s "$INSTRUCTIONS" ]; then
+      printf '' > "$INSTRUCTIONS"
+    else
+      printf '\n\n' >> "$INSTRUCTIONS"
+    fi
     cat "$SNIPPET" >> "$INSTRUCTIONS"
+    CHANGED=1
     info "Appended the long-running-commands convention to instructions.md."
   fi
 fi

@@ -52,7 +52,7 @@ bash install.sh
 The installer does two things:
 
 1. Copies `tools/bg.js` into your opencode config's `tools/` directory (backs up any existing file, runs a syntax check).
-2. Appends the "long-running commands" convention to `instructions.md`, so the agent knows when to use `bg_start` instead of `bash`. Skips if the section already exists.
+2. Installs the "long-running commands" convention into `instructions.md`, so the agent knows when to use `bg_start` instead of `bash`. It is written as a managed block delimited by `<!-- BEGIN opencode-bg convention -->` / `<!-- END opencode-bg convention -->`; re-running replaces just that block, so snippet updates stay in sync. A legacy unmarked section (from an older install) is migrated once; if there is no section yet, one is appended.
 
 It is idempotent and non-interactive. Extra flags:
 

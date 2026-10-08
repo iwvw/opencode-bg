@@ -1,4 +1,4 @@
-
+<!-- BEGIN opencode-bg convention -->
 # 长时命令后台执行约定（禁止用 bash 跑阻塞命令）
 
 opencode 的 bash 工具是**同步等待命令退出**的（内部 `detached:false`），默认 120 秒超时、最长 600 秒，且没有后台参数。凡是「不会自行退出」的命令，用 bash 工具跑就会把整个回合阻塞到超时。
@@ -23,3 +23,4 @@ opencode 的 bash 工具是**同步等待命令退出**的（内部 `detached:fa
 **仍然用普通 bash 的场景：** 有明确终点的命令，如 `npm run build`、`npm test`、`git status`、`npm install`、`tsc`、一次性脚本等。这类命令正常等待即可。
 
 **注意：** 不要用 `Start-Process ... &` 之类自行拼后台命令来绕过——直接调 `bg_start` 即可，它已处理 Windows 上 pwsh `detached` 失效、引号拆词、日志重定向等问题。
+<!-- END opencode-bg convention -->
