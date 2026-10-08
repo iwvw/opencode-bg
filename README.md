@@ -14,14 +14,17 @@ opencode's built-in `bash` tool waits for the command to exit. Its schema is exa
 
 ## The fix
 
-This repo adds two tools:
+This repo adds five tools:
 
 | Tool | Purpose |
 | --- | --- |
 | `bg_start` | Launch a command detached from opencode, return immediately with the PID and a log file path |
+| `bg_logs` | Read a snapshot of the captured stdout/stderr (tail N lines, pick a stream, page backwards) |
+| `bg_list` | List recorded background processes with PID, running/exited status, start time, and command |
+| `bg_restart` | Stop the old process tree and relaunch it with the same command and working directory |
 | `bg_stop` | Kill a previously started process (whole process tree on Windows, process group on POSIX) |
 
-Output is redirected to a log file under the OS temp directory (`%TEMP%/opencode-bg` on Windows, `/tmp/opencode-bg` on POSIX), so you can tail it live.
+Output is redirected to a log file under the OS temp directory (`%TEMP%/opencode-bg` on Windows, `/tmp/opencode-bg` on POSIX), so you can tail it live. A `registry.json` in the same directory records each started process (command, working directory, log paths, start time) so `bg_restart`, `bg_logs`, and `bg_list` can find it by PID — or default to the most recent one.
 
 ## Install
 
@@ -102,14 +105,35 @@ Returns:
 Started in background.
 PID: 11560
 Log: C:\Users\...\Temp\opencode-bg\1791208941783-npx-vite-port-5199.log
+Inspect: call bg_logs with pid 11560, or Read the log file (...), or run `Get-Content -LiteralPath "..." -Tail 50 -Wait` for a live view.
+Restart: call bg_restart with pid 11560 (or omit pid for the latest process).
 Stop: call bg_stop with pid 11560.
 ```
 
-Inspect the log with the Read tool or `Get-Content -LiteralPath "<log>" -Tail 50`. Stop with:
+Read the output:
 
 ```
+bg_logs(pid=11560)                 # last 50 lines of stdout + stderr
+bg_logs(pid=11560, stream="stderr", tail=100)
+bg_logs(tail=20)                   # latest process, stdout + stderr
+```
+
+List what is running:
+
+```
+bg_list()                          # all recorded processes
+bg_list(all=false)                 # only still-running ones
+```
+
+Restart and stop:
+
+```
+bg_restart(pid=11560)              # stop the old tree, relaunch the same command
+bg_restart()                       # restart the latest still-running process
 bg_stop(pid=11560)
 ```
+
+`bg_logs` returns a snapshot; it does not follow the file. For a live view use `Get-Content -LiteralPath "<log>" -Tail 50 -Wait`.
 
 ## Requirements
 
@@ -119,7 +143,7 @@ bg_stop(pid=11560)
 
 ## How it works
 
-opencode scans `{tool,tools}/*.{js,ts}` in each config directory and registers every export that has `args` + `description` + `execute`. This file exports `start` and `stop`, so the tool names become `bg_start` and `bg_stop`.
+opencode scans `{tool,tools}/*.{js,ts}` in each config directory and registers every export that has `args` + `description` + `execute`. This file exports `start`, `logs`, `list`, `restart`, and `stop`, so the tool names become `bg_start`, `bg_logs`, `bg_list`, `bg_restart`, and `bg_stop`.
 
 Windows specifics (all discovered by testing, not assumption):
 
@@ -127,9 +151,13 @@ Windows specifics (all discovered by testing, not assumption):
 - Passing the command through `-ArgumentList` mangles quotes (`Write-Output "tick $_"` becomes two lines). The command is written to a temp `.ps1` file and run with `-File` instead.
 - With `detached`, inherited file descriptors are lost, so output redirection is done by PowerShell's `-RedirectStandardOutput/Error`.
 
+Log reading sniffs the encoding (BOM, then a UTF-16LE zero-byte heuristic) so both UTF-8 and UTF-16LE logs decode correctly.
+
 ## Notes
 
 - `bg_stop` on an already-exited process reports `process not found`. That is expected — the process finished on its own.
+- `bg_restart` needs the process to be in `registry.json`, which is only written for processes started by this tool after the registry was introduced. Restarting a PID that predates it reports that no record was found.
+- The registry keeps the most recent 100 entries. `bg_restart` and `bg_logs` with no PID pick the latest still-running process.
 - The tool registry is only scanned at opencode startup. Adding or editing a tool file requires a restart.
 - A custom tool with the same name as a built-in replaces it. This tool deliberately uses the `bg` prefix to avoid collisions.
 

@@ -89,4 +89,4 @@ if [ "$CHANGED" -eq 1 ]; then
 else
   info "Nothing changed. If opencode is running, restart it to (re)load the tool."
 fi
-info "After restart you get two tools: bg_start and bg_stop."
+info "After restart you get five tools: bg_start, bg_logs, bg_list, bg_restart, bg_stop."

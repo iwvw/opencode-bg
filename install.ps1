@@ -5,8 +5,9 @@
 
 .DESCRIPTION
     Copies tools/bg.js into the global opencode tools directory so that opencode
-    loads `bg_start` / `bg_stop` on next start, and appends the "long-running
-    commands" convention to instructions.md (so the agent knows to use it).
+    loads `bg_start` / `bg_logs` / `bg_list` / `bg_restart` / `bg_stop` on next
+    start, and appends the "long-running commands" convention to instructions.md
+    (so the agent knows to use it).
 
     Idempotent and non-interactive: safe to run from an AI agent or CI.
 
@@ -139,4 +140,4 @@ if ($needRestart) {
 else {
     Write-Info "Nothing changed. If opencode is running, restart it to (re)load the tool."
 }
-Write-Info "After restart you get two tools: bg_start and bg_stop."
+Write-Info "After restart you get five tools: bg_start, bg_logs, bg_list, bg_restart, bg_stop."
