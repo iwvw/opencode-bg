@@ -102,6 +102,20 @@ function isAlive(pid) {
   }
 }
 
+// POSIX 停止：默认按进程组杀（setsid 让后台命令自成组长，pid==pgid，见 startPosix），
+// 连带其子进程一起终止。组不存在时退化为只杀单进程。
+function terminatePosix(pid, tree) {
+  if (tree) {
+    try {
+      process.kill(-pid, "SIGTERM")
+      return
+    } catch {
+      // 进程组不存在（旧记录或组长即父 shell）→ 退化为单进程
+    }
+  }
+  process.kill(pid, "SIGTERM")
+}
+
 function psQuote(value) {
   return `'${String(value).replace(/'/g, "''")}'`
 }
@@ -210,11 +224,26 @@ function startWindows(command, cwd, outLog, errLog, pidFile) {
   })
 }
 
+let setsidPath
+function resolveSetsid() {
+  if (setsidPath === undefined) {
+    try {
+      setsidPath = execFileSync("sh", ["-c", "command -v setsid"], { encoding: "utf8" }).trim() || ""
+    } catch {
+      setsidPath = ""
+    }
+  }
+  return setsidPath
+}
+
 /**
- * POSIX: 用 `setsid`/`nohup` 让进程脱离父进程，shell 内做重定向。
+ * POSIX: 用 `setsid` 让后台命令脱离父 shell 自成会话/进程组（组长 pid == 命令 pid），
+ * 再用 `nohup` 忽略 SIGHUP，shell 内做重定向。这样 bg_stop 的 `process.kill(-pid)`
+ * 能命中正确的进程组并连带子进程一起终止。setsid 不存在时退化为纯 nohup
+ * （此时 kill 组会命中父 shell 的组，terminatePosix 已加单进程兜底）。
  */
 function startPosix(command, cwd, outLog) {
-  const wrapped = `nohup ${command} > ${JSON.stringify(outLog)} 2>&1 & echo $!`
+  const wrapped = `${resolveSetsid() ? resolveSetsid() + " " : ""}nohup ${command} > ${JSON.stringify(outLog)} 2>&1 & echo $!`
   const child = spawn(process.env.SHELL || "/bin/sh", ["-c", wrapped], {
     cwd,
     stdio: ["ignore", "pipe", "ignore"],
@@ -304,7 +333,7 @@ export const restart = tool({
         if (process.platform === "win32") {
           execFileSync("taskkill", ["/PID", String(entry.pid), "/F", "/T"], { stdio: "pipe" })
         } else {
-          process.kill(-entry.pid, "SIGTERM")
+          terminatePosix(entry.pid, true)
         }
       } catch (error) {
         return `Failed to stop pid ${entry.pid} before restart: ${error instanceof Error ? error.message : String(error)}`
@@ -440,7 +469,7 @@ export const stop = tool({
         if (tree) flags.push("/T")
         execFileSync("taskkill", flags, { stdio: "pipe" })
       } else {
-        process.kill(tree ? -pid : pid, "SIGTERM")
+        terminatePosix(pid, tree)
       }
       return `Stopped pid ${pid}.`
     } catch (error) {
